@@ -24,11 +24,26 @@ def create_note(payload: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
+@router.get("")
+def list_all_notes() -> List[Dict[str, Any]]:
+    """
+    Retrieve all saved notes.
+    Returns a list of all notes with their IDs, content, and creation timestamps.
+    """
+    rows = db.list_notes()
+    return [
+        {
+            "id": row["id"],
+            "content": row["content"],
+            "created_at": row["created_at"],
+        }
+        for row in rows
+    ]
+
+
 @router.get("/{note_id}")
 def get_single_note(note_id: int) -> Dict[str, Any]:
     row = db.get_note(note_id)
     if row is None:
         raise HTTPException(status_code=404, detail="note not found")
     return {"id": row["id"], "content": row["content"], "created_at": row["created_at"]}
-
-

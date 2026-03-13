@@ -7,50 +7,88 @@
     <style>
       body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell, Noto Sans, sans-serif; margin: 2rem auto; max-width: 800px; padding: 0 1rem; }
       h1 { font-size: 1.5rem; }
+      h2 { font-size: 1.25rem; margin-top: 2rem; }
       textarea { width: 100%; min-height: 160px; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, Liberation Mono, monospace; }
-      button { padding: 0.5rem 1rem; }
+      button { padding: 0.5rem 1rem; cursor: pointer; }
+      button:hover { opacity: 0.8; }
+      button.primary { background-color: #2563eb; color: white; border: none; border-radius: 4px; }
+      button.secondary { background-color: #10b981; color: white; border: none; border-radius: 4px; }
+      button.outline { background-color: white; color: #374151; border: 1px solid #d1d5db; border-radius: 4px; }
       .items { margin-top: 1rem; }
       .item { display: flex; align-items: center; gap: 0.5rem; padding: 0.25rem 0; }
       .muted { color: #6b7280; font-size: 0.875rem; }
       .row { display: flex; gap: 0.5rem; align-items: center; }
+      .notes-list { margin-top: 1rem; }
+      .note-card { border: 1px solid #e5e7eb; border-radius: 4px; padding: 1rem; margin-bottom: 0.5rem; }
+      .note-card pre { white-space: pre-wrap; word-wrap: break-word; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, Liberation Mono, monospace; font-size: 0.875rem; }
+      .note-meta { color: #6b7280; font-size: 0.75rem; margin-top: 0.5rem; }
+      .badge { display: inline-block; padding: 0.25rem 0.5rem; background-color: #dbeafe; color: #1e40af; border-radius: 3px; font-size: 0.75rem; margin-left: 0.5rem; }
     </style>
   </head>
   <body>
     <h1>Action Item Extractor</h1>
-    <p class="muted">Paste notes and extract actionable items. Minimal raw HTML frontend.</p>
+    <p class="muted">Paste notes and extract actionable items. Choose between rule-based or AI-powered extraction.</p>
 
     <label for="text">Notes</label>
-    <textarea id="text" placeholder="Paste notes here...&#10;e.g.&#10;- [ ] Set up database&#10;- Implement extract endpoint"></textarea>
+    <textarea id="text" placeholder="Paste notes here...&#10;e.g.&#10;- [ ] Set up database&#10;- Implement extract endpoint&#10;&#10;Or try natural language:&#10;We need to finalize the budget. Don't forget to call the client!"></textarea>
     <div class="row">
       <label class="row"><input id="save_note" type="checkbox" checked /> Save as note</label>
-      <button id="extract">Extract</button>
+      <button id="extract" class="primary">Extract (Rule-Based)</button>
+      <button id="extract_llm" class="secondary">Extract (LLM) 🤖</button>
     </div>
 
     <div class="items" id="items"></div>
 
+    <h2>Saved Notes</h2>
+    <div class="row">
+      <button id="list_notes" class="outline">List All Notes</button>
+      <span class="muted" id="notes_count"></span>
+    </div>
+    <div class="notes-list" id="notes_list"></div>
+
     <script>
       const $ = (sel) => document.querySelector(sel);
       const itemsEl = $('#items');
-      const btn = $('#extract');
-      btn.addEventListener('click', async () => {
+      const notesListEl = $('#notes_list');
+      const notesCountEl = $('#notes_count');
+      
+      // Rule-based extraction
+      const extractBtn = $('#extract');
+      extractBtn.addEventListener('click', async () => {
+        await performExtraction('/action-items/extract', 'Rule-Based');
+      });
+
+      // LLM-based extraction
+      const extractLlmBtn = $('#extract_llm');
+      extractLlmBtn.addEventListener('click', async () => {
+        await performExtraction('/action-items/extract-llm', 'LLM');
+      });
+
+      // Shared extraction logic
+      async function performExtraction(endpoint, method) {
         const text = $('#text').value;
         const save = $('#save_note').checked;
-        itemsEl.textContent = 'Extracting...';
+        itemsEl.textContent = `Extracting using ${method}...`;
         try {
-          const res = await fetch('/action-items/extract', {
+          const res = await fetch(endpoint, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ text, save_note: save }),
           });
-          if (!res.ok) throw new Error('Request failed');
+          if (!res.ok) {
+            const error = await res.json();
+            throw new Error(error.detail || 'Request failed');
+          }
           const data = await res.json();
           if (!data.items || data.items.length === 0) {
-            itemsEl.innerHTML = '<p class="muted">No action items found.</p>';
+            itemsEl.innerHTML = `<p class="muted">No action items found using ${method} extraction.</p>`;
             return;
           }
-          itemsEl.innerHTML = data.items.map(it => (
-            `<div class="item"><input type="checkbox" data-id="${it.id}" /> <span>${it.text}</span></div>`
-          )).join('');
+          const methodBadge = `<span class="badge">${method}</span>`;
+          itemsEl.innerHTML = `<p class="muted">Found ${data.items.length} action item(s) ${methodBadge}</p>` + 
+            data.items.map(it => (
+              `<div class="item"><input type="checkbox" data-id="${it.id}" /> <span>${it.text}</span></div>`
+            )).join('');
           itemsEl.querySelectorAll('input[type="checkbox"]').forEach(cb => {
             cb.addEventListener('change', async (e) => {
               const id = e.target.getAttribute('data-id');
@@ -63,7 +101,45 @@
           });
         } catch (err) {
           console.error(err);
-          itemsEl.textContent = 'Error extracting items';
+          itemsEl.innerHTML = `<p style="color: #dc2626;">Error: ${err.message}</p>`;
+        }
+      }
+
+      // List all notes
+      const listNotesBtn = $('#list_notes');
+      listNotesBtn.addEventListener('click', async () => {
+        notesListEl.textContent = 'Loading notes...';
+        notesCountEl.textContent = '';
+        try {
+          const res = await fetch('/notes', {
+            method: 'GET',
+            headers: { 'Content-Type': 'application/json' },
+          });
+          if (!res.ok) throw new Error('Failed to fetch notes');
+          const notes = await res.json();
+          
+          if (!notes || notes.length === 0) {
+            notesListEl.innerHTML = '<p class="muted">No saved notes found.</p>';
+            notesCountEl.textContent = '';
+            return;
+          }
+
+          notesCountEl.textContent = `(${notes.length} note${notes.length !== 1 ? 's' : ''})`;
+          notesListEl.innerHTML = notes.map(note => {
+            const date = new Date(note.created_at).toLocaleString();
+            const preview = note.content.length > 200 
+              ? note.content.substring(0, 200) + '...' 
+              : note.content;
+            return `
+              <div class="note-card">
+                <pre>${preview}</pre>
+                <div class="note-meta">ID: ${note.id} | Created: ${date}</div>
+              </div>
+            `;
+          }).join('');
+        } catch (err) {
+          console.error(err);
+          notesListEl.innerHTML = '<p style="color: #dc2626;">Error loading notes</p>';
         }
       });
 
