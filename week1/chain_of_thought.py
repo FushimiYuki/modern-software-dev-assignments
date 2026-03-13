@@ -8,7 +8,11 @@ load_dotenv()
 NUM_RUNS_TIMES = 5
 
 # TODO: Fill this in!
-YOUR_SYSTEM_PROMPT = ""
+YOUR_SYSTEM_PROMPT = "" \
+"You are a preciese calculator. " \
+"step1. get a question. For example: (1 + 1 )mod 2= ?" \
+"step2. calculate and get the result. (1 + 1) mod 2 = 0" \
+"step3. print the result. Answer: 0"
 
 
 USER_PROMPT = """
